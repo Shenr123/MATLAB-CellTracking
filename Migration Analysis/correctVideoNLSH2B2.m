@@ -60,6 +60,8 @@ function [message, timePoints] = correctVideoNLSH2B2(video, v, v2, section, cons
     pos2 = [0 0 0 0];
     r = rectangle('Position', [0 0 0 0], 'LineWidth', 3, 'EdgeColor', 'white');
     r2 = rectangle('Position', [0 0 0 0], 'LineWidth', 3, 'EdgeColor', 'white');
+    flagRects = gobjects(0);
+    flagTexts = gobjects(0);
     finishedCellsSave = [];
     videoSave = zeros(size(video));
     
@@ -107,6 +109,20 @@ function [message, timePoints] = correctVideoNLSH2B2(video, v, v2, section, cons
             r = rectangle('Position', pos1, 'LineWidth', 3, 'EdgeColor', 'white');
             r2 = rectangle('Position', pos2, 'LineWidth', 3, 'EdgeColor', 'white');
 
+            %flag any unreviewed auto-detected division daughters visible
+            %in this frame so they aren't missed during correction
+            delete(flagRects(isvalid(flagRects)));
+            delete(flagTexts(isvalid(flagTexts)));
+            flagRects = gobjects(0);
+            flagTexts = gobjects(0);
+            for i = 1:length(finishedCells)
+                if finishedCells(i).Alive(frame) && isUnreviewedDivision(i)
+                    flagPos = finishedCells(i).BoundingBox(frame, :) .* scaled;
+                    flagRects(end + 1) = rectangle('Position', flagPos, 'LineWidth', 3, 'EdgeColor', 'yellow'); %#ok<AGROW>
+                    flagTexts(end + 1) = text(flagPos(1), max(flagPos(2) - 12, 1), 'DIV?', 'Color', 'yellow', 'FontWeight', 'bold', 'FontSize', fs); %#ok<AGROW>
+                end
+            end
+
             %update the synced raw (un-annotated) panel
             imshow(vDisplay(:, :, :, newFrame), 'Parent', rawAxesHandle);
 
@@ -145,7 +161,14 @@ function [message, timePoints] = correctVideoNLSH2B2(video, v, v2, section, cons
     end
 
     function releaseButton(~, ~)
-       buttonDown = false; 
+       buttonDown = false;
+    end
+
+    function tf = isUnreviewedDivision(i)
+        %% a cell counts as an unreviewed division daughter if it has a
+        %Parent link (set by the tracker when it auto-detected a
+        %division) and hasn't been confirmed or rejected yet
+        tf = finishedCells(i).Parent ~= 0 && (~isfield(finishedCells, 'DivisionConfirmed') || isempty(finishedCells(i).DivisionConfirmed) || ~finishedCells(i).DivisionConfirmed);
     end
 
     function pressButton(source, ~)
@@ -279,6 +302,32 @@ function [message, timePoints] = correctVideoNLSH2B2(video, v, v2, section, cons
                             video(:, :, :, frame) = insertText(video(:, :, :, frame), [0 0], 'E', 'FontSize', fs * 2.5, 'BoxColor', 'black', 'TextColor', 'white');
                             imshow(video(:, :, :, frame))
                         end
+                    elseif isUnreviewedDivision(selectedCell)
+                        c = questdlg('This cell was auto-detected as a division daughter. Is that correct?', 'Accuracy Check', 'Confirm Division', 'Reject Division', 'Leave Note', 'Confirm Division');
+                        parentIdx = finishedCells(selectedCell).Parent;
+                        if strcmp(c, 'Confirm Division')
+                            finishedCellsSave = finishedCells;
+                            finishedCells(selectedCell).DivisionConfirmed = true;
+                            if parentIdx > 0 && parentIdx <= length(finishedCells)
+                                finishedCells(parentIdx).DivisionConfirmed = true;
+                            end
+                        elseif strcmp(c, 'Reject Division')
+                            finishedCellsSave = finishedCells;
+                            finishedCells(selectedCell).Parent = 0;
+                            finishedCells(selectedCell).DivisionConfirmed = true;
+                            %if this was the parent's only remaining
+                            %daughter, it turns out the parent didn't
+                            %actually divide
+                            if parentIdx > 0 && parentIdx <= length(finishedCells) && ~any(arrayfun(@(x) isequal(x.Parent, parentIdx), finishedCells))
+                                finishedCells(parentIdx).Divided = false;
+                            end
+                        elseif strcmp(c, 'Leave Note')
+                            finishedCells(selectedCell).Note = inputdlg('Note:', 'Accuracy Check');
+                        end
+                        selectedCell = 0;
+                        selectedFrame = 0;
+                        pos1 = [0 0 0 0];
+                        r.Position = [0 0 0 0];
                     elseif finishedCells(selectedCell).Rupture(frame) <= 0
                         c = questdlg('What do you want to do?', 'Accuracy Check', 'Start Rupture', 'Leave Note', 'Start Rupture');
                         if strcmp(c, 'Start Rupture')
