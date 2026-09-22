@@ -11,24 +11,42 @@ function timePoints = correctVideoNLS2(video, v, section, constr, loc, scaled)
     ls = 4;
     screenSize = get(groot, 'Screensize');
     planes = size(video, 4);
-    
-    %initialize figure
-    fig = figure('Position', [(screenSize(3) - width)/2 (screenSize(4)-height)/2 width-1 height+19], 'Resize', 'off', 'MenuBar', 'none', 'KeyPressFcn', @keyPress, 'WindowScrollWheelFcn', @scrollWheel, 'WindowButtonDownFcn', @pressButton, 'WindowButtonUpFcn', @releaseButton, 'WindowButtonMotionFcn', @mouseMove);
 
-    %axes for scroll bar
-    scrollAxes = axes('Units', 'Pixels', 'Parent', fig, 'Position', [0 0 width 20]);
+    %precompute a brightness-normalized, un-annotated version of the raw
+    %channel for the synced "raw video" window. Each frame is stretched
+    %independently (like imadjust elsewhere in this pipeline) so
+    %frame-to-frame brightness stays visually consistent.
+    vDisplay = zeros(height, width, timePoints, 'uint8');
+    for k = 1:timePoints
+        frame8 = im2uint8(imadjust(v(:, :, k)));
+        if scaled ~= 1
+            frame8 = imresize(frame8, [height width]);
+        end
+        vDisplay(:, :, k) = frame8;
+    end
+
+    %initialize figure, wide enough for both the main and raw panels
+    %side by side
+    fig = figure('Position', [(screenSize(3) - 2*width)/2 (screenSize(4)-height)/2 2*width-1 height+19], 'Resize', 'on', 'MenuBar', 'none', 'KeyPressFcn', @keyPress, 'WindowScrollWheelFcn', @scrollWheel, 'WindowButtonDownFcn', @pressButton, 'WindowButtonUpFcn', @releaseButton, 'WindowButtonMotionFcn', @mouseMove, 'SizeChangedFcn', @resizeFig);
+
+    %axes for scroll bar (spans the full window width, under both panels)
+    scrollAxes = axes('Units', 'Pixels', 'Parent', fig, 'Position', [0 0 2*width 20]);
     axis([0 1 0 1]);
     axis off
 
     scrollAxes.Units = 'Normalized';
-    
+
     %scroll bar
     scrollWidth = max(1 / planes, 0.01);
     scrollBar = patch([0 1 1 0] * scrollWidth, [0 0 1 1], [.8 .8 .8], 'Parent', scrollAxes);
 
-    %main drawing axes for video display
-    axesHandle = axes('Units', 'Pixels', 'Position', [0 20 width height]);
-    
+    %main drawing axes for video display (left panel)
+    axesHandle = axes('Parent', fig, 'Units', 'Pixels', 'Position', [0 20 width height]);
+
+    %second, synced axes showing the raw (un-annotated) channel (right
+    %panel), in the same window so both expand together
+    rawAxesHandle = axes('Parent', fig, 'Units', 'Pixels', 'Position', [width 20 width height]);
+
     global finishedCells
     
     selectedCell = 0;
@@ -82,12 +100,34 @@ function timePoints = correctVideoNLS2(video, v, section, constr, loc, scaled)
 
             r = rectangle('Position', pos1, 'LineWidth', ls, 'EdgeColor', 'white');
             r2 = rectangle('Position', pos2, 'LineWidth', ls, 'EdgeColor', 'white');
-            
+
+            %update the synced raw (un-annotated) panel
+            imshow(vDisplay(:, :, newFrame), 'Parent', rawAxesHandle);
+
             %used to be "drawnow", but when called rapidly and the CPU is busy
             %it didn't let Matlab process events properly (ie, close figure).
             %pause(0.001)
             drawnow
+            figure(fig)
         end
+    end
+
+    function resizeFig(~, ~)
+        %% keep the scroll bar pinned to a fixed 20px strip and split the
+        %rest of the window evenly between the main and raw panels so
+        %both expand together when resized/maximized
+        if ~exist('scrollAxes', 'var') || ~isvalid(scrollAxes) || ~exist('axesHandle', 'var') || ~isvalid(axesHandle) || ~exist('rawAxesHandle', 'var') || ~isvalid(rawAxesHandle)
+            return
+        end
+        figPos = fig.Position;
+        fw = max(figPos(3), 2);
+        fh = max(figPos(4), 21);
+        halfW = fw / 2;
+        scrollAxes.Units = 'Pixels';
+        scrollAxes.Position = [0 0 fw 20];
+        scrollAxes.Units = 'Normalized';
+        axesHandle.Position = [0 20 halfW (fh - 20)];
+        rawAxesHandle.Position = [halfW 20 halfW (fh - 20)];
     end
 
     function mouseMove(source, ~)
@@ -103,10 +143,14 @@ function timePoints = correctVideoNLS2(video, v, section, constr, loc, scaled)
     end
 
     function pressButton(source, ~)
+        restoreFocus = onCleanup(@() figure(fig)); %#ok<NASGU>
         if strcmp(fig.SelectionType, 'alt') && selectedCell == 0
             source.Units = 'Pixels';
-            p = 2 .* source.CurrentPoint;
-            p(2) = 2 * height - p(2) + 40;
+            if source.CurrentPoint(1) > fig.Position(3) / 2
+                % click landed in the raw (un-annotated) panel; nothing to do
+                return
+            end
+            p = axesHandle.CurrentPoint(1, 1:2) ./ scaled;
             for i = 1:length(finishedCells)
                 if finishedCells(i).Alive(frame) && inpolygon(p(1), p(2), [finishedCells(i).BoundingBox(frame, 1) finishedCells(i).BoundingBox(frame, 1) finishedCells(i).BoundingBox(frame, 1)+finishedCells(i).BoundingBox(frame, 3) finishedCells(i).BoundingBox(frame, 1)+finishedCells(i).BoundingBox(frame, 3)], [finishedCells(i).BoundingBox(frame, 2) finishedCells(i).BoundingBox(frame, 2)+finishedCells(i).BoundingBox(frame, 4) finishedCells(i).BoundingBox(frame, 2)+finishedCells(i).BoundingBox(frame, 4) finishedCells(i).BoundingBox(frame, 2)])
                     selectedCell = i;
@@ -175,13 +219,14 @@ function timePoints = correctVideoNLS2(video, v, section, constr, loc, scaled)
         elseif strcmp(fig.SelectionType, 'normal')
             %% find the cell the user clicked in
             source.Units = 'Pixels';
-            p = source.CurrentPoint;
-            if p(2) <= 20
+            figP = source.CurrentPoint;
+            if figP(2) <= 20
                 buttonDown = true;
                 mouseMove(source)
+            elseif figP(1) > fig.Position(3) / 2
+                % click landed in the raw (un-annotated) panel; nothing to do
             else
-                p(2) = height - p(2) + 20;
-                p = p ./ scaled; 
+                p = axesHandle.CurrentPoint(1, 1:2) ./ scaled;
                 if selectedCell == 0
                     %% nothing is currently selected. select cell if one was clicked on
                     for i = 1:length(finishedCells)

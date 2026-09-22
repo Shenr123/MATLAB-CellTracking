@@ -124,7 +124,14 @@ for p = 1:channels:planes
     
     v(:, :, (p + channels - 1) / channels) = im;
     bg = imrotate(ShiftImage(bg, -offset(2), -offset(1), 0), angle(s));
-    video4(:, :, :, (p + channels - 1) / channels) = im2uint8(cat(3, bg .* uint16(50000 ./ (max(bg(:)))), bg .* uint16(50000 ./ (max(bg(:)))) + imadjust(im) .* uint16(bw), bg .* uint16(50000 ./ (max(bg(:))))));
+    %normalize background brightness using a robust high percentile rather
+    %than the frame's true max, since a single outlier/hot pixel in any
+    %one frame would otherwise dim that whole frame relative to its
+    %neighbors and cause frame-to-frame brightness flicker
+    bgSorted = sort(bg(:));
+    bgRobustMax = double(bgSorted(max(1, round(0.995 * numel(bgSorted)))));
+    bgScale = uint16(50000 ./ bgRobustMax);
+    video4(:, :, :, (p + channels - 1) / channels) = im2uint8(cat(3, bg .* bgScale, bg .* bgScale + imadjust(im) .* uint16(bw), bg .* bgScale));
     
     %% cells have been located in current frame. assign them to cells from previous frame
     if isempty(fieldnames(activeCells))

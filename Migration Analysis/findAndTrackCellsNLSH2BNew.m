@@ -148,11 +148,19 @@ for p = 1:timePoints
 
     v(:, :, p) = im;
     v2(:, :, p) = grn;
-%     video4(:, :, :, p) = im2uint8(cat(3, imadjust(grn) .* uint16(~bwR & ~bwG) + imadjust(im) .* uint16(bwR), imadjust(grn) .* uint16(~bwR & ~bwG) + imadjust(grn) .* uint16(bwG & ~bwR), imadjust(grn) .* uint16(~bwR & ~bwG)));     
+%     video4(:, :, :, p) = im2uint8(cat(3, imadjust(grn) .* uint16(~bwR & ~bwG) + imadjust(im) .* uint16(bwR), imadjust(grn) .* uint16(~bwR & ~bwG) + imadjust(grn) .* uint16(bwG & ~bwR), imadjust(grn) .* uint16(~bwR & ~bwG)));
     bg = imrotate(lastImage, angle(s));
 %     video4(:, :, :, p) = im2uint8(cat(3, bg .* uint16(50000 ./ (max(bg(:)))) .* uint16(~bwR) + imadjust(im) .* uint16(bwR), (bg .* uint16(50000 ./ (max(bg(:)))) + grn .* uint16(250000 ./ (max(grn(:))))) .* uint16(~bwR), bg .* uint16(50000 ./ (max(bg(:)))) .* uint16(~bwR)));
 %     video4(:, :, :, p) = im2uint8(cat(3, bg .* uint16(50000 ./ (max(bg(:)))) + imadjust(im) .* uint16(bwR), bg .* uint16(50000 ./ (max(bg(:)))) + grn .* uint16(250000 ./ (max(grn(:)))), bg .* uint16(50000 ./ (max(bg(:))))));
-    video4(:, :, :, p) = im2uint8(cat(3, bg .* uint16(50000 ./ (max(bg(:)))) + im2uint16(bwR), bg .* uint16(50000 ./ (max(bg(:)))) + grn .* uint16(250000 ./ (max(grn(:)))), bg .* uint16(50000 ./ (max(bg(:))))));
+    %normalize using a robust high percentile rather than the frame's true
+    %max, since a single outlier/hot pixel in any one frame would
+    %otherwise dim that whole frame relative to its neighbors and cause
+    %frame-to-frame brightness flicker
+    bgSorted = sort(bg(:));
+    bgScale = uint16(50000 ./ double(bgSorted(max(1, round(0.995 * numel(bgSorted))))));
+    grnSorted = sort(grn(:));
+    grnScale = uint16(250000 ./ double(grnSorted(max(1, round(0.995 * numel(grnSorted))))));
+    video4(:, :, :, p) = im2uint8(cat(3, bg .* bgScale + im2uint16(bwR), bg .* bgScale + grn .* grnScale, bg .* bgScale));
         
 
     %% cells have been located in current frame. assign them to cells from previous frame
