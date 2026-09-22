@@ -12,14 +12,14 @@ if ~isempty(bg)
     loc(s, :) = l2;
     imshow(bg)
     title(['Section ' num2str(section2) ', Constriction Size ' num2str(constrictionSize(mod(s - sections(1), length(constrictionSize)) + 1))])
-    set(gcf, 'Position', get(0, 'Screensize'));
+    set(gcf, 'WindowState', 'maximized');
     j = questdlg('How''s this?', 'Accuracy Check', 'Rotated Wrong', 'Constrictions Are Off', 'All Good', 'All Good');
 end
 while any(j(1) == 'RC')
     if j(1) == 'R'
         imshow(imadjust(im(:, :, s)))
         title(['Section ' num2str(section2) ', Constriction Size ' num2str(constrictionSize(mod(s - sections(1), length(constrictionSize)) + 1))])
-        set(gcf, 'Position', get(0, 'Screensize'));
+        set(gcf, 'WindowState', 'maximized');
         h = imline(gca, [200 size(im(:, :, s), 1)/2; size(im(:, :, s), 2)-200 size(im(:, :, s), 1)/2]);
         drawnow
         %pause
@@ -33,7 +33,7 @@ while any(j(1) == 'RC')
         bg = im2uint8(imrotate(imadjust(im(:, :, s)), angle(s)));
         imshow(bg)
         title(['Section ' num2str(section2) ', Constriction Size ' num2str(constrictionSize(mod(s - sections(1), length(constrictionSize)) + 1))])
-        set(gcf, 'Position', get(0, 'Screensize'));
+        set(gcf, 'WindowState', 'maximized');
         c = imhandles(gcf);
         con = [];
         for i = 1:6

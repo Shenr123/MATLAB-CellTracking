@@ -7,7 +7,7 @@ while j(1) == 'R'
         section2 = s;
     end
     title(['Section ' num2str(section2) ', Constriction Size ' num2str(constrictionSize(mod(s - sections(1), length(constrictionSize)) + 1))])
-    set(gcf, 'Position', get(0, 'Screensize'));
+    set(gcf, 'WindowState', 'maximized');
     h = imline(gca, [200 size(im(:, :, s), 1)/2; size(im(:, :, s), 2)-200 size(im(:, :, s), 1)/2]);
     drawnow
     %pause
@@ -20,7 +20,7 @@ while j(1) == 'R'
         bg = im2uint8(imrotate(imadjust(im(:, :, s)), angle(s)));
         imshow(bg)
         title(['Section ' num2str(section2) ', Constriction Size ' num2str(constrictionSize(mod(s - sections(1), length(constrictionSize)) + 1))])
-        set(gcf, 'Position', get(0, 'Screensize'));
+        set(gcf, 'WindowState', 'maximized');
         c = imhandles(gcf);
         con = [];
         for i = 1:6

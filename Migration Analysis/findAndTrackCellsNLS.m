@@ -626,7 +626,8 @@ if ~isempty(centers)
         else
             j = 0;
         end
-        for p = find(finishedCells(i).Alive, 2):find(finishedCells(i).Alive, 1, 'last')
+        aliveIdx = find(finishedCells(i).Alive, 2);
+        for p = aliveIdx(end):find(finishedCells(i).Alive, 1, 'last')
             if j == 0
                 if finishedCells(i).Constriction(p) == floor(finishedCells(i).Constriction(p))
                     j = p;
