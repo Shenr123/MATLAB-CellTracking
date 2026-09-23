@@ -253,6 +253,9 @@ if length(sections) == 1
         a = a + orientationRotation;
         checkRotation
     end
+    if constrictionSize(1) >= 0
+        excludeRegions3
+    end
 else
     fprintf('\nRotating images and locating constrictions...')
     %% get rotation angles and constriction heights
@@ -279,6 +282,13 @@ else
         a = a + orientationRotation;
         if ismember(s, sections) && constrictionSize(mod(s - sections(1), length(constrictionSize)) + 1) ~= 15 && constrictionSize(mod(s - sections(1), length(constrictionSize)) + 1) > 0
             checkRotation
+        end
+    end
+
+    %% ask about excluding regions for each valid section
+    for s = sections
+        if constrictionSize(mod(s - sections(1), length(constrictionSize)) + 1) >= 0
+            excludeRegions3
         end
     end
 end
