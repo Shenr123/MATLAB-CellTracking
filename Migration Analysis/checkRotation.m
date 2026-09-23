@@ -1,3 +1,9 @@
+%orientationRotation isn't defined when called from v2 (only v3 asks
+%about horizontal vs. vertical migration), so default to no extra
+%rotation in that case
+if ~exist('orientationRotation', 'var')
+    orientationRotation = 0;
+end
 j = 'Rotated Wrong';
 if series == 1
     section2 = str2double(fileName((find(fileName == '(', 1, 'last') + 1):(find(fileName == ')', 1, 'last') - 1)));
@@ -17,16 +23,17 @@ if ~isempty(bg)
 end
 while any(j(1) == 'RC')
     if j(1) == 'R'
-        imshow(imadjust(im(:, :, s)))
+        imR = imrotate(im(:, :, s), orientationRotation);
+        imshow(imadjust(imR))
         title(['Section ' num2str(section2) ', Constriction Size ' num2str(constrictionSize(mod(s - sections(1), length(constrictionSize)) + 1))])
         set(gcf, 'WindowState', 'maximized');
-        h = imline(gca, [200 size(im(:, :, s), 1)/2; size(im(:, :, s), 2)-200 size(im(:, :, s), 1)/2]);
+        h = imline(gca, [200 size(imR, 1)/2; size(imR, 2)-200 size(imR, 1)/2]);
         drawnow
         %pause
         while ~waitforbuttonpress
         end
         pos = h.getPosition;
-        angle(s) = 180 * (atan((pos(2, 2) - pos(1, 2)) / (pos(2, 1) - pos(1, 1))) / pi + cellsFromTop);
+        angle(s) = 180 * (atan((pos(2, 2) - pos(1, 2)) / (pos(2, 1) - pos(1, 1))) / pi + cellsFromTop) + orientationRotation;
         j = 'Constrictions Are Off';
     end
     while j(1) == 'C'
