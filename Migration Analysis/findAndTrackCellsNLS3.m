@@ -67,7 +67,7 @@ for p = 1:channels:planes
         %entirely, so any nuclei that started out touching were always
         %merged into one object from the very beginning of the section
         D = -bwdist(~bw);
-        L = watershed(imhmin(D, 3));
+        L = watershed(imhmin(D, 5));
         if ~any(c == [0 15])
             L(round([loc(s, 6):loc(s, 5) loc(s, 4):loc(s, 3) loc(s, 2):loc(s, 1)]), :) = 1;
         end
@@ -79,7 +79,7 @@ for p = 1:channels:planes
 
         %separate objects composed of multiple nuclei into individual objects
         D = -bwdist(~bw);
-        L = watershed(imhmin(D, 3));
+        L = watershed(imhmin(D, 5));
         if ~any(c == [0 15])
             L(round([loc(s, 6):loc(s, 5) loc(s, 4):loc(s, 3) loc(s, 2):loc(s, 1)]), :) = 1;
         end

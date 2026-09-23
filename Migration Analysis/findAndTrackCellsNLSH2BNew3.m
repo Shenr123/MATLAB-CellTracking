@@ -86,7 +86,7 @@ for p = 1:timePoints
 %     bwR(wshed == 0) = 0;
 
     dist = -bwdist(~bwR);
-    wshed = watershed(imhmin(dist, 3 + (2 * (p == 1))));
+    wshed = watershed(imhmin(dist, 5 + (2 * (p == 1))));
     if ~any(c == [0 15])
         wshed(round([loc(s, 6):loc(s, 5) loc(s, 4):loc(s, 3) loc(s, 2):loc(s, 1)]), :) = 1;
     end
