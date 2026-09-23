@@ -60,8 +60,6 @@ function [message, timePoints] = correctVideoNLSH2B2(video, v, v2, section, cons
     pos2 = [0 0 0 0];
     r = rectangle('Position', [0 0 0 0], 'LineWidth', 3, 'EdgeColor', 'white');
     r2 = rectangle('Position', [0 0 0 0], 'LineWidth', 3, 'EdgeColor', 'white');
-    flagRects = gobjects(0);
-    flagTexts = gobjects(0);
     finishedCellsSave = [];
     videoSave = zeros(size(video));
     
@@ -109,20 +107,6 @@ function [message, timePoints] = correctVideoNLSH2B2(video, v, v2, section, cons
             r = rectangle('Position', pos1, 'LineWidth', 3, 'EdgeColor', 'white');
             r2 = rectangle('Position', pos2, 'LineWidth', 3, 'EdgeColor', 'white');
 
-            %flag any unreviewed auto-detected deaths visible in this
-            %frame so they aren't missed during correction
-            delete(flagRects(isvalid(flagRects)));
-            delete(flagTexts(isvalid(flagTexts)));
-            flagRects = gobjects(0);
-            flagTexts = gobjects(0);
-            for i = 1:length(finishedCells)
-                if finishedCells(i).Alive(frame) && frame == find(finishedCells(i).Alive, 1, 'last') && isUnreviewedDeath(i)
-                    flagPos = finishedCells(i).BoundingBox(frame, :) .* scaled;
-                    flagRects(end + 1) = rectangle('Position', flagPos, 'LineWidth', 3, 'EdgeColor', 'red'); %#ok<AGROW>
-                    flagTexts(end + 1) = text(flagPos(1), max(flagPos(2) - 12, 1), 'DIED?', 'Color', 'red', 'FontWeight', 'bold', 'FontSize', fs); %#ok<AGROW>
-                end
-            end
-
             %update the synced raw (un-annotated) panel
             imshow(vDisplay(:, :, :, newFrame), 'Parent', rawAxesHandle);
 
@@ -162,13 +146,6 @@ function [message, timePoints] = correctVideoNLSH2B2(video, v, v2, section, cons
 
     function releaseButton(~, ~)
        buttonDown = false;
-    end
-
-    function tf = isUnreviewedDeath(i)
-        %% a cell counts as an unreviewed death if the tracker flagged it
-        %as having broken apart (Dead) and it hasn't been confirmed or
-        %rejected yet
-        tf = isfield(finishedCells, 'Dead') && ~isempty(finishedCells(i).Dead) && finishedCells(i).Dead && (~isfield(finishedCells, 'DeathConfirmed') || isempty(finishedCells(i).DeathConfirmed) || ~finishedCells(i).DeathConfirmed);
     end
 
     function pressButton(source, ~)
@@ -302,22 +279,6 @@ function [message, timePoints] = correctVideoNLSH2B2(video, v, v2, section, cons
                             video(:, :, :, frame) = insertText(video(:, :, :, frame), [0 0], 'E', 'FontSize', fs * 2.5, 'BoxColor', 'black', 'TextColor', 'white');
                             imshow(video(:, :, :, frame))
                         end
-                    elseif isUnreviewedDeath(selectedCell)
-                        c = questdlg('This cell was auto-detected as having died (split into many small fragments). Is that correct?', 'Accuracy Check', 'Confirm Death', 'Reject Death', 'Leave Note', 'Confirm Death');
-                        if strcmp(c, 'Confirm Death')
-                            finishedCellsSave = finishedCells;
-                            finishedCells(selectedCell).DeathConfirmed = true;
-                        elseif strcmp(c, 'Reject Death')
-                            finishedCellsSave = finishedCells;
-                            finishedCells(selectedCell).Dead = false;
-                            finishedCells(selectedCell).DeathConfirmed = true;
-                        elseif strcmp(c, 'Leave Note')
-                            finishedCells(selectedCell).Note = inputdlg('Note:', 'Accuracy Check');
-                        end
-                        selectedCell = 0;
-                        selectedFrame = 0;
-                        pos1 = [0 0 0 0];
-                        r.Position = [0 0 0 0];
                     elseif finishedCells(selectedCell).Rupture(frame) <= 0
                         c = questdlg('What do you want to do?', 'Accuracy Check', 'Start Rupture', 'Leave Note', 'Start Rupture');
                         if strcmp(c, 'Start Rupture')

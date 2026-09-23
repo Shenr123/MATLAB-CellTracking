@@ -15,8 +15,6 @@
 %             Blue ones cross a constriction and come back
 %             Cyan ones cross a constriction and keep going
 %         No information will be recorded for gray ones, you don't need to spend time making them perfect
-%         A red box labeled "DIED?" marks a cell the tracker auto-detected as having died (split into many small fragments) that you haven't reviewed yet
-%             Right click it to Confirm Death / Reject Death
 %     Commands you can use to correct the image sequences:
 %         Left click the same nucleus twice in the same frame:
 %             Delete the cell
