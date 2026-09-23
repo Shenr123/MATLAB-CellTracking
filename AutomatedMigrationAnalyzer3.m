@@ -188,6 +188,50 @@ else
 end
 mkdir(saveFolder)
 
+%% ask whether cells migrate horizontally or vertically in the raw image.
+%Everything downstream (constriction detection, tracking, etc.) assumes
+%cells migrate vertically (top-to-bottom or bottom-to-top) through
+%horizontal constriction bands. If the device was imaged with cells
+%migrating horizontally instead, rotate the working image ~90 degrees
+%here so the rest of the pipeline can proceed completely unchanged.
+migrationDirection = questdlg('Are your cells migrating horizontally or vertically in the raw image?', 'Accuracy Check', 'Vertically', 'Horizontally', 'Vertically');
+if isempty(migrationDirection)
+    fprintf('\n')
+    return
+end
+orientationRotation = 0;
+if strcmp(migrationDirection, 'Horizontally')
+    orientationRotation = 90;
+    if isAVI
+        previewReader = VideoReader([filePath fileName]);
+        previewFrame = readFrame(previewReader);
+        previewFrame = previewFrame(:, :, 3);
+    else
+        reader.setSeries(0);
+        previewFrame = bfGetPlane(reader, k);
+    end
+    approved = false;
+    while ~approved
+        previewFig = figure('Name', 'Confirm rotation', 'WindowState', 'maximized');
+        subplot(1, 2, 1)
+        imshow(imadjust(previewFrame))
+        title('Before (raw orientation)')
+        subplot(1, 2, 2)
+        imshow(imadjust(imrotate(previewFrame, orientationRotation)))
+        title(['After (rotated ' num2str(orientationRotation) ' degrees)'])
+        c = questdlg('Do cells now migrate vertically (top-to-bottom or bottom-to-top) in the "After" image?', 'Accuracy Check', 'Yes', 'No, flip the other way', 'Cancel', 'Yes');
+        close(previewFig)
+        if strcmp(c, 'Yes')
+            approved = true;
+        elseif strcmp(c, 'No, flip the other way')
+            orientationRotation = -orientationRotation;
+        else
+            fprintf('\n')
+            return
+        end
+    end
+end
+
 if length(sections) == 1
     fprintf('\nRotating image and locating constrictions...')
     clear im
@@ -205,7 +249,8 @@ if length(sections) == 1
     if constrictionSize(1) == 15
         rotate15
     elseif constrictionSize(1) > 0
-        [bg, a, l2] = locateConstrictions(im(:, :, s), constrictionSize(1), cellsFromTop, l, t);
+        [bg, a, l2] = locateConstrictions(imrotate(im(:, :, s), orientationRotation), constrictionSize(1), cellsFromTop, l, t);
+        a = a + orientationRotation;
         checkRotation
     end
 else
@@ -218,7 +263,7 @@ else
     for s = series:-1:1
         reader.setSeries(s - 1);
         im(:, :, s) = bfGetPlane(reader, k);
-        f(s) = parfeval(@locateConstrictions, 3, im(:, :, s), constrictionSize(mod(s - sections(1), length(constrictionSize)) + 1) * ismember(s, sections), cellsFromTop, l, t);
+        f(s) = parfeval(@locateConstrictions, 3, imrotate(im(:, :, s), orientationRotation), constrictionSize(mod(s - sections(1), length(constrictionSize)) + 1) * ismember(s, sections), cellsFromTop, l, t);
     end
 
     %% ask user to manually rotate 15 micron sections
@@ -231,6 +276,7 @@ else
     %% ask user to check accuracy of auto-rotated sections
     for k = 1:series
         [s, bg, a, l2] = fetchNext(f);
+        a = a + orientationRotation;
         if ismember(s, sections) && constrictionSize(mod(s - sections(1), length(constrictionSize)) + 1) ~= 15 && constrictionSize(mod(s - sections(1), length(constrictionSize)) + 1) > 0
             checkRotation
         end
