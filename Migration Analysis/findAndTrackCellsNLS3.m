@@ -52,6 +52,14 @@ for p = 1:channels:planes
 
     bw = imrotate(ShiftImage(imclearborder(bwareaopen(~bwareaopen(~imopen(bw, strel('disk', 1)), round(minObjectSize / 10)), minObjectSize)), -offset(2), -offset(1), 0), angle(s));
     im = imrotate(ShiftImage(im, -offset(2), -offset(1), 0), angle(s));
+    %exclude any user-specified region above/below a line (e.g. debris,
+    %out-of-focus background) from detection entirely
+    if exist('excludeBelow', 'var') && ~isnan(excludeBelow(s))
+        bw(round(excludeBelow(s)):end, :) = false;
+    end
+    if exist('excludeAbove', 'var') && ~isnan(excludeAbove(s))
+        bw(1:round(excludeAbove(s)), :) = false;
+    end
 
     if isempty(fieldnames(activeCells))
         pixels = bwconncomp(bw);
@@ -428,7 +436,11 @@ for p = 1:channels:planes
         end
 
         %% current cells that are leftover must be new, a nucleus mistakenly
-        %split in two, or a genuine division
+        %split in two, or a genuine death by fragmentation. Division is not
+        %detected in this NLS-only pipeline - there's no H2B channel to
+        %confirm a real division against, and NLS morphology alone isn't
+        %reliable enough (a dim neighboring cell coming into focus can look
+        %identical to a genuine 2-piece split).
         for i = 1:length(cellData)
             temp = true;
             for j = find(~unassignedCells)
@@ -449,69 +461,6 @@ for p = 1:channels:planes
                         activeCells(j).Visibility((p + channels - 1) / channels) = activeCells(j).MeanIntensity((p + channels - 1) / channels) / imavg;
                         activeCells(j).Area((p + channels - 1) / channels) = activeCells(j).Area((p + channels - 1) / channels) + cellData(i).Area;
                         activeCells(j).BoundingBox((p + channels - 1) / channels, :) = [min(activeCells(j).BoundingBox((p + channels - 1) / channels, 1), cellData(i).BoundingBox(1)) min(activeCells(j).BoundingBox((p + channels - 1) / channels, 2), cellData(i).BoundingBox(2)) max(activeCells(j).BoundingBox((p + channels - 1) / channels, 1) + activeCells(j).BoundingBox((p + channels - 1) / channels, 3), cellData(i).BoundingBox(1) + cellData(i).BoundingBox(3))-min(activeCells(j).BoundingBox((p + channels - 1) / channels, 1), cellData(i).BoundingBox(1)) max(activeCells(j).BoundingBox((p + channels - 1) / channels, 2) + activeCells(j).BoundingBox((p + channels - 1) / channels, 4), cellData(i).BoundingBox(2) + cellData(i).BoundingBox(4))-min(activeCells(j).BoundingBox((p + channels - 1) / channels, 2), cellData(i).BoundingBox(2))];
-                    elseif cx.NumObjects == 2
-                        %% possible cell division: the combined region genuinely
-                        %contains two separate objects even after a finer
-                        %re-segmentation. Only accept this as a division if no
-                        %OTHER already-tracked cell's previous position explains
-                        %either piece (otherwise these are just two separate
-                        %neighboring cells, not one cell dividing), the two
-                        %pieces are reasonably similar in size (so a stray
-                        %fragment doesn't get counted as a daughter), and their
-                        %combined area is close to this cell's area just before
-                        %the split (area should be roughly conserved through
-                        %division, not gained from an unrelated object nearby).
-                        cx2 = regionprops(cx, 'Area', 'Centroid', 'BoundingBox');
-                        piece1 = cx2(1).Centroid + [boxX1 boxY1];
-                        piece2 = cx2(2).Centroid + [boxX1 boxY1];
-                        otherCellNearby = false;
-                        for j2 = 1:length(activeCells)
-                            if j2 ~= j && length(activeCells(j2).Alive) >= (p - 1) / channels && activeCells(j2).Alive((p - 1) / channels)
-                                if sum((activeCells(j2).Centroid((p - 1) / channels, :) - piece1) .^ 2) < 0.0055 * l2 ^ 2 || sum((activeCells(j2).Centroid((p - 1) / channels, :) - piece2) .^ 2) < 0.0055 * l2 ^ 2
-                                    otherCellNearby = true;
-                                    break
-                                end
-                            end
-                        end
-                        areaRatio = min(cx2(1).Area, cx2(2).Area) / max(cx2(1).Area, cx2(2).Area);
-                        combinedArea = cx2(1).Area + cx2(2).Area;
-                        parentPrevArea = activeCells(j).Area((p - 1) / channels);
-                        if ~otherCellNearby && areaRatio > 0.3 && combinedArea > 0.6 * parentPrevArea && combinedArea < 1.6 * parentPrevArea
-                            temp = false;
-                            imCrop = im(boxY1:boxY2, boxX1:boxX2);
-                            intensity1 = mean(imCrop(cx.PixelIdxList{1}));
-                            intensity2 = mean(imCrop(cx.PixelIdxList{2}));
-                            %keep the piece closer to this cell's previous
-                            %position as the continuing track; the other
-                            %becomes a new daughter track
-                            if sum((piece1 - activeCells(j).Centroid((p - 1) / channels, :)) .^ 2) > sum((piece2 - activeCells(j).Centroid((p - 1) / channels, :)) .^ 2)
-                                keep = cx2(2); daughter = cx2(1);
-                                keepGlobal = piece2; daughterGlobal = piece1;
-                                keepIntensity = intensity2; daughterIntensity = intensity1;
-                            else
-                                keep = cx2(1); daughter = cx2(2);
-                                keepGlobal = piece1; daughterGlobal = piece2;
-                                keepIntensity = intensity1; daughterIntensity = intensity2;
-                            end
-                            activeCells(j).Area((p + channels - 1) / channels) = keep.Area;
-                            activeCells(j).Centroid((p + channels - 1) / channels, :) = keepGlobal;
-                            activeCells(j).BoundingBox((p + channels - 1) / channels, :) = keep.BoundingBox + [boxX1 boxY1 0 0];
-                            activeCells(j).MeanIntensity((p + channels - 1) / channels) = keepIntensity;
-                            activeCells(j).Visibility((p + channels - 1) / channels) = keepIntensity / imavg;
-                            activeCells(end + 1).TimeAppearing = (p + channels - 1) / channels;
-                            activeCells(end).Area((p + channels - 1) / channels) = daughter.Area;
-                            activeCells(end).Centroid((p + channels - 1) / channels, :) = daughterGlobal;
-                            activeCells(end).BoundingBox((p + channels - 1) / channels, :) = daughter.BoundingBox + [boxX1 boxY1 0 0];
-                            activeCells(end).MeanIntensity((p + channels - 1) / channels) = daughterIntensity;
-                            activeCells(end).Visibility((p + channels - 1) / channels) = daughterIntensity / imavg;
-                            activeCells(end).Rupture = zeros(1, planes / channels);
-                            activeCells(end).Constriction = zeros(1, planes / channels);
-                            activeCells(end).Alive = [zeros(1, (p - 1) / channels) 1 zeros(1, (planes - p + 1 - channels) / channels)];
-                            activeCells(end).Parent = j + 0.5;
-                            activeCells(end).Divided = false;
-                            activeCells(end).CombinedCentroid = [];
-                            activeCells(j).Alive((p + channels - 1) / channels) = 2;
-                        end
                     elseif cx.NumObjects >= 4
                         %% possible cell death: this cell's blob has broken
                         %into 4 or more pieces. A clean division always

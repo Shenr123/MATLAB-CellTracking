@@ -92,6 +92,14 @@ for p = 1:timePoints
     end
     bwR(wshed == 0) = 0;
     bwR = bwareaopen(~bwareaopen(~bwR, round(minObjectSize / 8), 4), minObjectSize, 4);
+    %exclude any user-specified region above/below a line (e.g. debris,
+    %out-of-focus background) from detection entirely
+    if exist('excludeBelow', 'var') && ~isnan(excludeBelow(s))
+        bwR(round(excludeBelow(s)):end, :) = false;
+    end
+    if exist('excludeAbove', 'var') && ~isnan(excludeAbove(s))
+        bwR(1:round(excludeAbove(s)), :) = false;
+    end
 
 %     dist = -bwdist(~bwG);
 %     wshed = watershed(imhmin(dist, 5));
@@ -596,10 +604,19 @@ for p = 1:timePoints
                             %neighboring cells, not one cell dividing), the
                             %two pieces are reasonably similar in size (so a
                             %stray fragment doesn't get counted as a
-                            %daughter), and their combined area is close to
+                            %daughter), their combined area is close to
                             %this cell's area just before the split (area
                             %should be roughly conserved through division,
-                            %not gained from an unrelated object nearby).
+                            %not gained from an unrelated object nearby), AND
+                            %the daughter piece's location shows no
+                            %meaningful H2B signal in the PRIOR frame. A real
+                            %division produces a brand new H2B mass where
+                            %there wasn't one before; a dim pre-existing
+                            %neighboring cell just coming into focus already
+                            %had some H2B signal there, just below the
+                            %normal tracking threshold - checking the raw
+                            %H2B channel directly (not just already-tracked
+                            %cells) catches that case too.
                             cx2 = regionprops(cx, 'Area', 'Centroid', 'BoundingBox', 'Perimeter');
                             piece1 = cx2(1).Centroid + [boxX1 boxY1];
                             piece2 = cx2(2).Centroid + [boxX1 boxY1];
@@ -616,7 +633,6 @@ for p = 1:timePoints
                             combinedArea = cx2(1).Area + cx2(2).Area;
                             parentPrevArea = activeCells(j).Area(p - 1);
                             if ~otherCellNearby && areaRatio > 0.3 && combinedArea > 0.6 * parentPrevArea && combinedArea < 1.6 * parentPrevArea
-                                temp = false;
                                 imCrop = im(boxY1:boxY2, boxX1:boxX2);
                                 grnCrop = grn(boxY1:boxY2, boxX1:boxX2);
                                 redIntensity1 = mean(imCrop(cx.PixelIdxList{1}));
@@ -625,7 +641,7 @@ for p = 1:timePoints
                                 greenIntensity2 = mean(grnCrop(cx.PixelIdxList{2}));
                                 %keep the piece closer to this cell's previous
                                 %position as the continuing track; the other
-                                %becomes a new daughter track
+                                %is the division-daughter candidate
                                 if sum((piece1 - activeCells(j).Centroid(p - 1, :)) .^ 2) > sum((piece2 - activeCells(j).Centroid(p - 1, :)) .^ 2)
                                     keep = cx2(2); daughter = cx2(1);
                                     keepGlobal = piece2; daughterGlobal = piece1;
@@ -637,26 +653,35 @@ for p = 1:timePoints
                                     keepRed = redIntensity1; daughterRed = redIntensity2;
                                     keepGreen = greenIntensity1; daughterGreen = greenIntensity2;
                                 end
-                                activeCells(j).Area(p) = keep.Area;
-                                activeCells(j).Centroid(p, :) = keepGlobal;
-                                activeCells(j).BoundingBox(p, :) = keep.BoundingBox + [boxX1 boxY1 0 0];
-                                activeCells(j).RedIntensity(p) = keepRed;
-                                activeCells(j).GreenIntensity(p) = keepGreen;
-                                activeCells(j).Perimeter(p) = keep.Perimeter;
-                                activeCells(end + 1).TimeAppearing = p;
-                                activeCells(end).Area(p) = daughter.Area;
-                                activeCells(end).Centroid(p, :) = daughterGlobal;
-                                activeCells(end).BoundingBox(p, :) = daughter.BoundingBox + [boxX1 boxY1 0 0];
-                                activeCells(end).RedIntensity(p) = daughterRed;
-                                activeCells(end).GreenIntensity(p) = daughterGreen;
-                                activeCells(end).Perimeter(p) = daughter.Perimeter;
-                                activeCells(end).Rupture = zeros(1, timePoints);
-                                activeCells(end).Constriction = zeros(1, timePoints);
-                                activeCells(end).Alive = [zeros(1, p - 1) 1 zeros(1, timePoints - p)];
-                                activeCells(end).Parent = j + 0.5;
-                                activeCells(end).Divided = false;
-                                activeCells(end).CombinedCentroid = [];
-                                activeCells(j).Alive(p) = 2;
+                                daughterBox = daughter.BoundingBox + [boxX1 boxY1 0 0];
+                                priorY1 = round(max(1, daughterBox(2)));
+                                priorY2 = round(min(size(v, 1), daughterBox(2) + daughterBox(4)));
+                                priorX1 = round(max(1, daughterBox(1)));
+                                priorX2 = round(min(size(v, 2), daughterBox(1) + daughterBox(3)));
+                                daughterPriorSignal = mean(v(priorY1:priorY2, priorX1:priorX2, p - 1), 'all');
+                                if daughterPriorSignal < 1.3 * imavg(p - 1)
+                                    temp = false;
+                                    activeCells(j).Area(p) = keep.Area;
+                                    activeCells(j).Centroid(p, :) = keepGlobal;
+                                    activeCells(j).BoundingBox(p, :) = keep.BoundingBox + [boxX1 boxY1 0 0];
+                                    activeCells(j).RedIntensity(p) = keepRed;
+                                    activeCells(j).GreenIntensity(p) = keepGreen;
+                                    activeCells(j).Perimeter(p) = keep.Perimeter;
+                                    activeCells(end + 1).TimeAppearing = p;
+                                    activeCells(end).Area(p) = daughter.Area;
+                                    activeCells(end).Centroid(p, :) = daughterGlobal;
+                                    activeCells(end).BoundingBox(p, :) = daughterBox;
+                                    activeCells(end).RedIntensity(p) = daughterRed;
+                                    activeCells(end).GreenIntensity(p) = daughterGreen;
+                                    activeCells(end).Perimeter(p) = daughter.Perimeter;
+                                    activeCells(end).Rupture = zeros(1, timePoints);
+                                    activeCells(end).Constriction = zeros(1, timePoints);
+                                    activeCells(end).Alive = [zeros(1, p - 1) 1 zeros(1, timePoints - p)];
+                                    activeCells(end).Parent = j + 0.5;
+                                    activeCells(end).Divided = false;
+                                    activeCells(end).CombinedCentroid = [];
+                                    activeCells(j).Alive(p) = 2;
+                                end
                             end
                         elseif cx.NumObjects >= 4
                             %% possible cell death: this cell's blob has

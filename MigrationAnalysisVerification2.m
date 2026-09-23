@@ -5,11 +5,20 @@
 % 2. Correct the image sequences one at a time
 %     Move through the video by clicking and dragging the scroll bar, using the mouse's scroll whell, or pressing arrow keys
 %     The colors of the boxes are important
-%         Gray nuclei don't do anything
-%         Light blue ones rupture
-%         Magenta ones attempt constrictions
-%         Dark blue ones rupture and attempt constrictions
+%         * If both NLS and H2B are present (rupture detection supported):
+%             Gray nuclei don't do anything
+%             Cyan ("light blue") ones rupture
+%             Magenta ones attempt constrictions
+%             Blue ("dark blue") ones rupture and attempt constrictions
+%         * If only NLS is present (no rupture detection):
+%             Gray nuclei don't do anything
+%             Blue ones cross a constriction and come back
+%             Cyan ones cross a constriction and keep going
 %         No information will be recorded for gray ones, you don't need to spend time making them perfect
+%         A yellow box labeled "DIV?" marks a cell the tracker auto-detected as a division daughter that you haven't reviewed yet
+%             Right click it to Confirm Division / Reject Division
+%         A red box labeled "DIED?" marks a cell the tracker auto-detected as having died (split into many small fragments) that you haven't reviewed yet
+%             Right click it to Confirm Death / Reject Death
 %     Commands you can use to correct the image sequences:
 %         Left click the same nucleus twice in the same frame:
 %             Delete the cell
