@@ -563,7 +563,7 @@ for p = 1:timePoints
             for i = 1:length(cellData)
                 temp = true;
                 for j = find(~unassignedCells)
-                    if abs(activeCells(j).Area(p) + cellData(i).Area - activeCells(j).Area(p - 1)) < activeCells(j).Area(p - 1) / 2 && sum((activeCells(j).Centroid(p, :) - cellData(i).Centroid) .^ 2) < 0.0055 * l2 ^ 2
+                    if ~any(activeCells(j).Alive(p) == [2 4]) && abs(activeCells(j).Area(p) + cellData(i).Area - activeCells(j).Area(p - 1)) < activeCells(j).Area(p - 1) / 2 && sum((activeCells(j).Centroid(p, :) - cellData(i).Centroid) .^ 2) < 0.0055 * l2 ^ 2
                         boxY1 = round(max(1, min(activeCells(j).BoundingBox(p, 2), cellData(i).BoundingBox(2)) - 1));
                         boxY2 = round(min(size(bwR, 1), max(activeCells(j).BoundingBox(p, 2) + activeCells(j).BoundingBox(p, 4), cellData(i).BoundingBox(2) + cellData(i).BoundingBox(4)) + 1));
                         boxX1 = round(max(1, min(activeCells(j).BoundingBox(p, 1), cellData(i).BoundingBox(1)) - 1));
@@ -658,6 +658,23 @@ for p = 1:timePoints
                                 activeCells(end).CombinedCentroid = [];
                                 activeCells(j).Alive(p) = 2;
                             end
+                        elseif cx.NumObjects >= 4
+                            %% possible cell death: this cell's blob has
+                            %broken into 4 or more pieces. A clean division
+                            %always produces exactly 2 similar-sized pieces,
+                            %so 3+ already suggests something falling apart
+                            %rather than dividing; only treat it as death
+                            %once every resulting piece is clearly smaller
+                            %than this cell's own area (so a couple of
+                            %unusually large chunks - which would look more
+                            %like a segmentation artifact than
+                            %fragmentation - don't count).
+                            cx2 = regionprops(cx, 'Area');
+                            parentPrevArea = activeCells(j).Area(p - 1);
+                            if all([cx2.Area] < 0.3 * parentPrevArea)
+                                temp = false;
+                                activeCells(j).Alive(p) = 4;
+                            end
                         end
                     end
                 end
@@ -709,14 +726,16 @@ for p = 1:timePoints
                 end
             end
 
-            %% remove cells that have divided or left the image from the active list
+            %% remove cells that have divided, died, or left the image from the active list
             for i = length(activeCells):-1:1
-                if any(activeCells(i).Alive(p) == [2 3])
+                if any(activeCells(i).Alive(p) == [2 3 4])
                     if activeCells(i).Alive(p) == 2
                        activeCells(i).Divided = true;
                        for j = (find(activeCells(i).Rupture(1:(p - 1)) == 0, 1, 'last') + 1):(p - 1)
                            activeCells(i).Rupture(j) = -5;
                        end
+                    elseif activeCells(i).Alive(p) == 4
+                       activeCells(i).Dead = true;
                     end
                     activeCells(i).Alive(p) = 0;
                     finishedCells(end + 1) = activeCells(i);
@@ -882,7 +901,7 @@ for i = length(finishedCells):-1:1
           end
        end
    else
-       if ~finishedCells(i).Divided
+       if ~finishedCells(i).Divided && (~isfield(finishedCells, 'Dead') || isempty(finishedCells(i).Dead) || ~finishedCells(i).Dead)
             finishedCells(i).Alive((find(finishedCells(i).Alive == 1, 1, 'last') + 1):end) = 0;
        end
    end

@@ -432,7 +432,7 @@ for p = 1:channels:planes
         for i = 1:length(cellData)
             temp = true;
             for j = find(~unassignedCells)
-                if activeCells(j).Area((p + channels - 1) / channels) + cellData(i).Area < activeCells(j).Area((p - 1) / channels) * 2 && sum((activeCells(j).Centroid((p + channels - 1) / channels, :) - cellData(i).Centroid) .^ 2) < 0.0055 * l2 ^ 2
+                if ~any(activeCells(j).Alive((p + channels - 1) / channels) == [2 4]) && activeCells(j).Area((p + channels - 1) / channels) + cellData(i).Area < activeCells(j).Area((p - 1) / channels) * 2 && sum((activeCells(j).Centroid((p + channels - 1) / channels, :) - cellData(i).Centroid) .^ 2) < 0.0055 * l2 ^ 2
                     boxY1 = round(max(1, min(activeCells(j).BoundingBox((p + channels - 1) / channels, 2), cellData(i).BoundingBox(2)) - 1));
                     boxY2 = round(min(size(bw, 1), max(activeCells(j).BoundingBox((p + channels - 1) / channels, 2) + activeCells(j).BoundingBox((p + channels - 1) / channels, 4), cellData(i).BoundingBox(2) + cellData(i).BoundingBox(4)) + 1));
                     boxX1 = round(max(1, min(activeCells(j).BoundingBox((p + channels - 1) / channels, 1), cellData(i).BoundingBox(1)) - 1));
@@ -512,6 +512,23 @@ for p = 1:channels:planes
                             activeCells(end).CombinedCentroid = [];
                             activeCells(j).Alive((p + channels - 1) / channels) = 2;
                         end
+                    elseif cx.NumObjects >= 4
+                        %% possible cell death: this cell's blob has broken
+                        %into 4 or more pieces. A clean division always
+                        %produces exactly 2 similar-sized pieces, so 3+
+                        %already suggests something falling apart rather
+                        %than dividing; only treat it as death once every
+                        %resulting piece is clearly smaller than this
+                        %cell's own area (so a couple of unusually large
+                        %chunks - which would look more like a
+                        %segmentation artifact than fragmentation - don't
+                        %count).
+                        cx2 = regionprops(cx, 'Area');
+                        parentPrevArea = activeCells(j).Area((p - 1) / channels);
+                        if all([cx2.Area] < 0.3 * parentPrevArea)
+                            temp = false;
+                            activeCells(j).Alive((p + channels - 1) / channels) = 4;
+                        end
                     end
                 end
             end
@@ -590,11 +607,13 @@ for p = 1:channels:planes
             end
         end
 
-        %% remove cells that have divided or left the image from the active list
+        %% remove cells that have divided, died, or left the image from the active list
         for i = length(activeCells):-1:1
-            if any(activeCells(i).Alive((p + channels - 1) / channels) == [2 3])
+            if any(activeCells(i).Alive((p + channels - 1) / channels) == [2 3 4])
                 if activeCells(i).Alive((p + channels - 1) / channels) == 2
                    activeCells(i).Divided = true;
+                elseif activeCells(i).Alive((p + channels - 1) / channels) == 4
+                   activeCells(i).Dead = true;
                 end
                 activeCells(i).Alive((p + channels - 1) / channels) = 0;
                 finishedCells(end + 1) = activeCells(i);
@@ -683,7 +702,7 @@ for i = length(finishedCells):-1:1
           end
        end
    else
-       if ~finishedCells(i).Divided
+       if ~finishedCells(i).Divided && (~isfield(finishedCells, 'Dead') || isempty(finishedCells(i).Dead) || ~finishedCells(i).Dead)
             finishedCells(i).Alive((find(finishedCells(i).Alive == 1, 1, 'last') + 1):end) = 0;
        end
    end

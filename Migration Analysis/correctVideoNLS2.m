@@ -114,6 +114,10 @@ function timePoints = correctVideoNLS2(video, v, section, constr, loc, scaled)
                     flagPos = finishedCells(i).BoundingBox(frame, :) .* scaled;
                     flagRects(end + 1) = rectangle('Position', flagPos, 'LineWidth', ls, 'EdgeColor', 'yellow'); %#ok<AGROW>
                     flagTexts(end + 1) = text(flagPos(1), max(flagPos(2) - 12, 1), 'DIV?', 'Color', 'yellow', 'FontWeight', 'bold', 'FontSize', fs); %#ok<AGROW>
+                elseif finishedCells(i).Alive(frame) && frame == find(finishedCells(i).Alive, 1, 'last') && isUnreviewedDeath(i)
+                    flagPos = finishedCells(i).BoundingBox(frame, :) .* scaled;
+                    flagRects(end + 1) = rectangle('Position', flagPos, 'LineWidth', ls, 'EdgeColor', 'red'); %#ok<AGROW>
+                    flagTexts(end + 1) = text(flagPos(1), max(flagPos(2) - 12, 1), 'DIED?', 'Color', 'red', 'FontWeight', 'bold', 'FontSize', fs); %#ok<AGROW>
                 end
             end
 
@@ -165,6 +169,13 @@ function timePoints = correctVideoNLS2(video, v, section, constr, loc, scaled)
         tf = finishedCells(i).Parent ~= 0 && (~isfield(finishedCells, 'DivisionConfirmed') || isempty(finishedCells(i).DivisionConfirmed) || ~finishedCells(i).DivisionConfirmed);
     end
 
+    function tf = isUnreviewedDeath(i)
+        %% a cell counts as an unreviewed death if the tracker flagged it
+        %as having broken apart (Dead) and it hasn't been confirmed or
+        %rejected yet
+        tf = isfield(finishedCells, 'Dead') && ~isempty(finishedCells(i).Dead) && finishedCells(i).Dead && (~isfield(finishedCells, 'DeathConfirmed') || isempty(finishedCells(i).DeathConfirmed) || ~finishedCells(i).DeathConfirmed);
+    end
+
     function pressButton(source, ~)
         restoreFocus = onCleanup(@() figure(fig)); %#ok<NASGU>
         if strcmp(fig.SelectionType, 'alt') && selectedCell == 0
@@ -200,6 +211,18 @@ function timePoints = correctVideoNLS2(video, v, section, constr, loc, scaled)
                         if parentIdx > 0 && parentIdx <= length(finishedCells) && ~any(arrayfun(@(x) isequal(x.Parent, parentIdx), finishedCells))
                             finishedCells(parentIdx).Divided = false;
                         end
+                    elseif strcmp(c, 'Leave Note')
+                        finishedCells(selectedCell).Note = inputdlg('Note:', 'Accuracy Check');
+                    end
+                elseif isUnreviewedDeath(selectedCell)
+                    c = questdlg('This cell was auto-detected as having died (split into many small fragments). Is that correct?', 'Accuracy Check', 'Confirm Death', 'Reject Death', 'Leave Note', 'Confirm Death');
+                    if strcmp(c, 'Confirm Death')
+                        finishedCellsSave = finishedCells;
+                        finishedCells(selectedCell).DeathConfirmed = true;
+                    elseif strcmp(c, 'Reject Death')
+                        finishedCellsSave = finishedCells;
+                        finishedCells(selectedCell).Dead = false;
+                        finishedCells(selectedCell).DeathConfirmed = true;
                     elseif strcmp(c, 'Leave Note')
                         finishedCells(selectedCell).Note = inputdlg('Note:', 'Accuracy Check');
                     end
