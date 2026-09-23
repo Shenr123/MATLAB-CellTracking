@@ -62,13 +62,24 @@ for p = 1:channels:planes
     end
 
     if isempty(fieldnames(activeCells))
+        %even on the first frame, touching/nearby nuclei need to be
+        %separated via watershed - this branch previously skipped that
+        %entirely, so any nuclei that started out touching were always
+        %merged into one object from the very beginning of the section
+        D = -bwdist(~bw);
+        L = watershed(imhmin(D, 3));
+        if ~any(c == [0 15])
+            L(round([loc(s, 6):loc(s, 5) loc(s, 4):loc(s, 3) loc(s, 2):loc(s, 1)]), :) = 1;
+        end
+        bw(L == 0) = 0;
+        bw = bwareaopen(~bwareaopen(~bw, round(minObjectSize / 10)), minObjectSize);
         pixels = bwconncomp(bw);
     else
         pixelsX = bwconncomp(bw);
 
         %separate objects composed of multiple nuclei into individual objects
         D = -bwdist(~bw);
-        L = watershed(imhmin(D, 5));
+        L = watershed(imhmin(D, 3));
         if ~any(c == [0 15])
             L(round([loc(s, 6):loc(s, 5) loc(s, 4):loc(s, 3) loc(s, 2):loc(s, 1)]), :) = 1;
         end
