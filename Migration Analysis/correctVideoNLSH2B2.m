@@ -62,6 +62,7 @@ function [message, timePoints] = correctVideoNLSH2B2(video, v, v2, section, cons
     r2 = rectangle('Position', [0 0 0 0], 'LineWidth', 3, 'EdgeColor', 'white');
     flagRects = gobjects(0);
     flagTexts = gobjects(0);
+    nucleusLines = gobjects(0);
     finishedCellsSave = [];
     videoSave = zeros(size(video));
     
@@ -123,6 +124,24 @@ function [message, timePoints] = correctVideoNLSH2B2(video, v, v2, section, cons
                 end
             end
 
+            %draw a segmented nucleus outline for every alive cell, in the
+            %same color as its bounding box, so it's clear exactly what
+            %the program is recognizing as nucleus pixels (not just the
+            %box). Re-derived from the raw H2B channel purely for display
+            %(the pipeline's primary detection channel) - doesn't affect
+            %tracking.
+            delete(nucleusLines(isvalid(nucleusLines)));
+            nucleusLines = gobjects(0);
+            for i = 1:length(finishedCells)
+                if finishedCells(i).Alive(frame)
+                    boxColor = double(reshape(video(round(finishedCells(i).BoundingBox(frame, 2) .* scaled), round(finishedCells(i).BoundingBox(frame, 1) .* scaled), :, frame), 1, 3)) / 255;
+                    boundaryPts = segmentNucleus(finishedCells(i).BoundingBox(frame, :), frame);
+                    if ~isempty(boundaryPts)
+                        nucleusLines(end + 1) = line(boundaryPts(:, 1) .* scaled, boundaryPts(:, 2) .* scaled, 'Color', boxColor, 'LineWidth', 1.5); %#ok<AGROW>
+                    end
+                end
+            end
+
             %update the synced raw (un-annotated) panel
             imshow(vDisplay(:, :, :, newFrame), 'Parent', rawAxesHandle);
 
@@ -169,6 +188,44 @@ function [message, timePoints] = correctVideoNLSH2B2(video, v, v2, section, cons
         %as having broken apart (Dead) and it hasn't been confirmed or
         %rejected yet
         tf = isfield(finishedCells, 'Dead') && ~isempty(finishedCells(i).Dead) && finishedCells(i).Dead && (~isfield(finishedCells, 'DeathConfirmed') || isempty(finishedCells(i).DeathConfirmed) || ~finishedCells(i).DeathConfirmed);
+    end
+
+    function boundaryPts = segmentNucleus(box, frameNum)
+        %% re-derive a local segmentation mask for this one cell, matching
+        %the analysis pipeline's own binarization of the H2B channel
+        %(same sensitivity), cropped to its bounding box. Display only -
+        %never used for any tracking decision. Returns the mask boundary
+        %in full-resolution [x y] coordinates (same space as
+        %BoundingBox/v), or [] if nothing segments out.
+        margin = 3;
+        y1 = max(1, round(box(2)) - margin);
+        y2 = min(size(v, 1), round(box(2) + box(4)) + margin);
+        x1 = max(1, round(box(1)) - margin);
+        x2 = min(size(v, 2), round(box(1) + box(3)) + margin);
+        boundaryPts = [];
+        if y2 <= y1 || x2 <= x1
+            return
+        end
+        crop = v(y1:y2, x1:x2, frameNum);
+        localBw = bwareaopen(imbinarize(imadjust(crop), 'adaptive', 'Sensitivity', 0.5), 20);
+        if ~any(localBw(:))
+            return
+        end
+        cc = bwconncomp(localBw);
+        props = regionprops(cc, 'Centroid');
+        cropCenter = [(x2 - x1 + 1) / 2, (y2 - y1 + 1) / 2];
+        dists = zeros(1, cc.NumObjects);
+        for k = 1:cc.NumObjects
+            dists(k) = sum((props(k).Centroid - cropCenter) .^ 2);
+        end
+        [~, bestIdx] = min(dists);
+        mask = false(size(localBw));
+        mask(cc.PixelIdxList{bestIdx}) = true;
+        b = bwboundaries(mask);
+        if isempty(b)
+            return
+        end
+        boundaryPts = [b{1}(:, 2) + x1 - 1, b{1}(:, 1) + y1 - 1];
     end
 
     function pressButton(source, ~)
